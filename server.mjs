@@ -78,38 +78,35 @@ zMcNJBgXS9wrHbstOMlGQiXKC8pX29kOfpskNtNg56huPDf0VQ==
 app.locals.db = db;
 
 // ───── New Route to Handle WhatsApp Number Validation ─────────────────────────────
-app.post("/api/validate-whatsapp-numbers", async (req, res) => {
-  const { phone_numbers } = req.body;
+const handleWhatsAppValidation = async (phoneNumbers) => {
+  const chunkSize = 10; // how many numbers per batch
+  const totalBatches = Math.ceil(phoneNumbers.length / chunkSize);
 
-  if (!phone_numbers || !Array.isArray(phone_numbers)) {
-    return res.status(400).json({ error: "Please provide an array of phone numbers." });
-  }
+  setLoading(true); // 🔄 show spinner
 
-  // Define the API endpoint and headers for RapidAPI
-  const options = {
-    method: 'POST',
-    url: 'https://whatsapp-number-validator3.p.rapidapi.com/WhatsappNumberHasItBulkWithToken',
-    headers: {
-      'x-rapidapi-key': process.env.RAPIDAPI_KEY,  // Put your RapidAPI Key here
-      'x-rapidapi-host': 'whatsapp-number-validator3.p.rapidapi.com',
-      'Content-Type': 'application/json',
-    },
-    data: {
-      phone_numbers: phone_numbers
+  for (let i = 0; i < phoneNumbers.length; i += chunkSize) {
+    const chunk = phoneNumbers.slice(i, i + chunkSize);
+
+    try {
+      const response = await fetch("/api/validate-whatsapp-numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_numbers: chunk }),
+      });
+
+      const result = await response.json();
+      console.log(`Batch ${i / chunkSize + 1}/${totalBatches} result:`, result);
+
+      // ✅ You can update UI here with partial results
+      // e.g., append to a table of validated numbers
+
+    } catch (error) {
+      console.error(`Batch ${i / chunkSize + 1} failed:`, error);
     }
-  };
-
-  try {
-    // Make the request to RapidAPI
-    const response = await axios(options);
-    
-    // Return the API response to the client
-    res.status(200).json(response.data);
-  } catch (error) {
-    console.error("Error calling RapidAPI:", error);
-    res.status(500).json({ error: "Internal Server Error" });
   }
-});
+
+  setLoading(false); // ✅ hide spinner after all batches finish
+};
 
 
 // ───── 404 handler ────────────────────────────────────────────────────────────
