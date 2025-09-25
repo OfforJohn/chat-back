@@ -78,38 +78,78 @@ zMcNJBgXS9wrHbstOMlGQiXKC8pX29kOfpskNtNg56huPDf0VQ==
 app.locals.db = db;
 
 // ───── New Route to Handle WhatsApp Number Validation ─────────────────────────────
-app.post("/api/validate-whatsapp-numbers", async (req, res) => {
+// ───── New Route: WhatsApp Validation + Profile Data ──────────────────────────
+app.post("/api/validate-whatsapp-profiles", async (req, res) => {
   const { phone_numbers } = req.body;
 
   if (!phone_numbers || !Array.isArray(phone_numbers)) {
     return res.status(400).json({ error: "Please provide an array of phone numbers." });
   }
 
-  // Define the API endpoint and headers for RapidAPI
-  const options = {
-    method: 'POST',
-    url: 'https://whatsapp-number-validator3.p.rapidapi.com/WhatsappNumberHasItBulkWithToken',
-    headers: {
-      'x-rapidapi-key': process.env.RAPIDAPI_KEY,  // Put your RapidAPI Key here
-      'x-rapidapi-host': 'whatsapp-number-validator3.p.rapidapi.com',
-      'Content-Type': 'application/json',
-    },
-    data: {
-      phone_numbers: phone_numbers
-    }
-  };
-
   try {
-    // Make the request to RapidAPI
-    const response = await axios(options);
-    
-    // Return the API response to the client
-    res.status(200).json(response.data);
+    // 1️⃣ Validate phone numbers in bulk
+    const validationRes = await axios.post(
+      "https://whatsapp-number-validator3.p.rapidapi.com/WhatsappNumberHasItBulkWithToken",
+      { phone_numbers },
+      {
+        headers: {
+          "x-rapidapi-key": process.env.RAPIDAPI_VALIDATOR_KEY,
+          "x-rapidapi-host": "whatsapp-number-validator3.p.rapidapi.com",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const validationData = Array.isArray(validationRes.data)
+      ? validationRes.data
+      : validationRes.data?.validation || [];
+
+    // 2️⃣ Fetch profile info one by one (different API key)
+    const profileData = {};
+    for (const num of phone_numbers) {
+      try {
+        const profileRes = await axios.get(
+          `https://whatsapp-profile-data.p.rapidapi.com/mobile?mobile=${num}`,
+          {
+            headers: {
+              "x-rapidapi-key": process.env.RAPIDAPI_PROFILE_KEY,
+              "x-rapidapi-host": "whatsapp-profile-data.p.rapidapi.com",
+            },
+          }
+        );
+        profileData[num] = profileRes.data;
+      } catch (err) {
+        console.warn(`Profile fetch failed for ${num}:`, err.response?.data || err.message);
+        profileData[num] = null;
+      }
+    }
+
+    // 3️⃣ Merge results
+    const mergedResults = validationData.map((v) => {
+      const num =
+        v.phone_number || v.phone || v.mobile || v.number || v.phoneNumber || null;
+      const profile = profileData[num] || {};
+      return {
+        phone_number: num,
+        status: v.status ?? v.state ?? v.is_valid ?? "unknown",
+        avatar:
+          profile.avatar ||
+          profile.profile_pic ||
+          profile.profile?.profile_pic ||
+          profile.profile_pic_url ||
+          null,
+        validationRaw: v,
+        profileRaw: profile,
+      };
+    });
+
+    res.status(200).json(mergedResults);
   } catch (error) {
-    console.error("Error calling RapidAPI:", error);
+    console.error("Error validating WhatsApp profiles:", error.response?.data || error.message);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
+
 
 
 // ───── 404 handler ────────────────────────────────────────────────────────────
