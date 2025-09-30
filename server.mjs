@@ -86,69 +86,65 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
     return res.status(400).json({ error: "Please provide an array of phone numbers." });
   }
 
-  try {
-    // 1️⃣ Validate phone numbers in bulk
-    const validationRes = await axios.post(
-      "https://whatsapp-number-validator3.p.rapidapi.com/WhatsappNumberHasItBulkWithToken",
-      { phone_numbers },
-      {
-        headers: {
-          "x-rapidapi-key": process.env.RAPIDAPI_VALIDATOR_KEY,
-          "x-rapidapi-host": "whatsapp-number-validator3.p.rapidapi.com",
-          "Content-Type": "application/json",
-        },
-      }
-    );
+  const results = [];
 
-    const validationData = Array.isArray(validationRes.data)
-      ? validationRes.data
-      : validationRes.data?.validation || [];
+  for (const num of phone_numbers) {
+    try {
+      const profileRes = await axios.get(
+        `https://whatsapp-profile-data.p.rapidapi.com/mobile?mobile=${encodeURIComponent(num)}`,
+        {
+          headers: {
+            "x-rapidapi-key": process.env.RAPIDAPI_PROFILE_KEY,
+            "x-rapidapi-host": "whatsapp-profile-data.p.rapidapi.com",
+          },
+        }
+      );
 
-    // 2️⃣ Fetch profile info one by one (different API key)
-    const profileData = {};
-    for (const num of phone_numbers) {
-      try {
-        const profileRes = await axios.get(
-          `https://whatsapp-profile-data.p.rapidapi.com/mobile?mobile=${num}`,
-          {
-            headers: {
-              "x-rapidapi-key": process.env.RAPIDAPI_PROFILE_KEY,
-              "x-rapidapi-host": "whatsapp-profile-data.p.rapidapi.com",
-            },
-          }
-        );
-        profileData[num] = profileRes.data;
-      } catch (err) {
-        console.warn(`Profile fetch failed for ${num}:`, err.response?.data || err.message);
-        profileData[num] = null;
-      }
-    }
+      const profile = profileRes.data || {};
 
-    // 3️⃣ Merge results
-    const mergedResults = validationData.map((v) => {
-      const num =
-        v.phone_number || v.phone || v.mobile || v.number || v.phoneNumber || null;
-      const profile = profileData[num] || {};
-      return {
+      results.push({
         phone_number: num,
-        status: v.status ?? v.state ?? v.is_valid ?? "unknown",
+        is_valid: true,
         avatar:
           profile.avatar ||
           profile.profile_pic ||
           profile.profile?.profile_pic ||
           profile.profile_pic_url ||
           null,
-        validationRaw: v,
         profileRaw: profile,
-      };
-    });
+        status:
+          profile.status ??
+          profile.state ??
+          profile.is_valid ??
+          profile?.code === 200
+            ? "valid"
+            : "invalid",
+      });
+    } catch (err) {
+      const errorData = err.response?.data || {};
+      const errorCode = err.response?.status;
 
-    res.status(200).json(mergedResults);
-  } catch (error) {
-    console.error("Error validating WhatsApp profiles:", error.response?.data || error.message);
-    res.status(500).json({ error: "Internal Server Error" });
+      // Custom status based on code/message
+      let status = "unknown";
+      if (errorCode === 400 || errorData.message?.toLowerCase().includes("invalid")) {
+        status = "invalid phone number";
+      }
+
+      results.push({
+        phone_number: num,
+        is_valid: false,
+        avatar: null,
+        profileRaw: errorData,
+        error: errorData,
+        status,
+      });
+    }
   }
+
+  res.status(200).json(results);
 });
+
+
 
 
 
