@@ -102,6 +102,18 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
 
       const profile = profileRes.data || {};
 
+      // Default to valid
+      let status = "valid";
+
+      // Explicitly mark as invalid only if it matches the exact error structure
+      if (
+        profile.code === 400 &&
+        typeof profile.message === "string" &&
+        profile.message.toLowerCase() === "invalid phone number"
+      ) {
+        status = "invalid";
+      }
+
       results.push({
         phone_number: num,
         is_valid: true,
@@ -109,25 +121,27 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
           profile.avatar ||
           profile.profile_pic ||
           profile.profile?.profile_pic ||
-          profile.profile_pic_url ||
+          profile.profilePic ||
+          profile.profilePicUrl ||
+          profile.data?.head_image ||
           null,
         profileRaw: profile,
-        status:
-          profile.status ??
-          profile.state ??
-          profile.is_valid ??
-          profile?.code === 200
-            ? "valid"
-            : "invalid",
+        status,
       });
     } catch (err) {
       const errorData = err.response?.data || {};
       const errorCode = err.response?.status;
 
-      // Custom status based on code/message
       let status = "unknown";
-      if (errorCode === 400 || errorData.message?.toLowerCase().includes("invalid")) {
-        status = "invalid phone number";
+
+      // Only mark as invalid if it matches the specific error structure
+      if (
+        errorCode === 400 &&
+        errorData.code === 400 &&
+        typeof errorData.message === "string" &&
+        errorData.message.toLowerCase() === "invalid phone number"
+      ) {
+        status = "invalid";
       }
 
       results.push({
@@ -143,6 +157,7 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
 
   res.status(200).json(results);
 });
+
 
 
 
