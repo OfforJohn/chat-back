@@ -79,11 +79,14 @@ app.locals.db = db;
 
 // ───── New Route to Handle WhatsApp Number Validation ─────────────────────────────
 // ───── New Route: WhatsApp Validation + Profile Data ──────────────────────────
+// ✅ 1. WhatsApp Profile Validation Route
 app.post("/api/validate-whatsapp-profiles", async (req, res) => {
   const { phone_numbers } = req.body;
 
   if (!phone_numbers || !Array.isArray(phone_numbers)) {
-    return res.status(400).json({ error: "Please provide an array of phone numbers." });
+    return res
+      .status(400)
+      .json({ error: "Please provide an array of phone numbers." });
   }
 
   const results = [];
@@ -101,11 +104,9 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
       );
 
       const profile = profileRes.data || {};
-
-      // Default to valid
       let status = "valid";
 
-      // Explicitly mark as invalid only if it matches the exact error structure
+      // mark invalid if API says so
       if (
         profile.code === 400 &&
         typeof profile.message === "string" &&
@@ -131,10 +132,8 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
     } catch (err) {
       const errorData = err.response?.data || {};
       const errorCode = err.response?.status;
-
       let status = "unknown";
 
-      // Only mark as invalid if it matches the specific error structure
       if (
         errorCode === 400 &&
         errorData.code === 400 &&
@@ -157,6 +156,29 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
 
   res.status(200).json(results);
 });
+
+// ✅ 2. Image Proxy Route (Fixes CORS issues)
+app.get("/api/proxy-image", async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: "Image URL is required" });
+  }
+
+  try {
+    // Fetch image as binary
+    const response = await axios.get(url, { responseType: "arraybuffer" });
+
+    // Set headers so the browser accepts it
+    res.setHeader("Content-Type", response.headers["content-type"]);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(Buffer.from(response.data, "binary"));
+  } catch (err) {
+    console.error("Proxy failed:", err.message);
+    res.status(500).json({ error: "Failed to fetch image" });
+  }
+});
+
 
 
 
