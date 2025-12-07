@@ -320,25 +320,46 @@ export const onBoardUser = async (req, res, next) => {
       });
     }
 
-    // 2️⃣ Assign default firebaseUid if missing
+    // 2️⃣ Ensure firebaseUid is provided
     if (!firebaseUid) {
-      firebaseUid = `guest_${Date.now()}`;
+      return res.status(400).json({
+        msg: "Firebase UID is required",
+        status: false,
+      });
     }
 
     const prisma = getPrismaInstance();
 
-    // 3️⃣ Create user in DB
+    // 3️⃣ Check if user already exists (by firebaseUid or email)
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { firebaseUid },
+          { email }
+        ],
+      },
+    });
+
+    if (existingUser) {
+      return res.status(200).json({
+        status: true,
+        msg: "User already onboarded",
+        data: existingUser,
+      });
+    }
+
+    // 4️⃣ Create user in DB
     const newUser = await prisma.user.create({
       data: {
         email,
         name,
         about,
         profilePicture,
-        firebaseUid,
+        firebaseUid, // ✅ Use the actual Firebase UID
       },
     });
 
-    // 4️⃣ Return success response
+    // 5️⃣ Return success response
     return res.status(201).json({
       status: true,
       msg: "User onboarded successfully",
@@ -349,6 +370,7 @@ export const onBoardUser = async (req, res, next) => {
     next(error);
   }
 };
+
 
 
 export const getAllUsers = async (req, res, next) => {
