@@ -303,6 +303,8 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
+const firebaseUid = req.body.firebaseUid || `guest_${Date.now()}`;
+
 
 
 
@@ -322,9 +324,20 @@ export const onBoardUser = async (request, response, next) => {
       });
     } else {
       const prisma = getPrismaInstance();
-      await prisma.user.create({
-        data: { email, name, about, profilePicture },
-      });
+
+
+  await prisma.user.create({
+  data: {
+    email,
+    name,
+    about,
+    profilePicture: image,
+    firebaseUid,
+  },
+});
+
+
+
       return response.json({ msg: "Success", status: true });
     }
   } catch (error) {
