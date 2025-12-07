@@ -303,8 +303,6 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
-const firebaseUid = req.body.firebaseUid || `guest_${Date.now()}`;
-
 
 
 
@@ -312,38 +310,34 @@ const firebaseUid = req.body.firebaseUid || `guest_${Date.now()}`;
 
 export const onBoardUser = async (request, response, next) => {
   try {
-    const {
-      email,
-      name,
-      about = "Available",
-      image: profilePicture,
-    } = request.body;
+    const { email, name, about = "Available", image: profilePicture } = request.body;
+
     if (!email || !name || !profilePicture) {
       return response.json({
         msg: "Email, Name and Image are required",
       });
-    } else {
-      const prisma = getPrismaInstance();
-
-
-  await prisma.user.create({
-  data: {
-    email,
-    name,
-    about,
-    profilePicture: image,
-    firebaseUid,
-  },
-});
-
-
-
-      return response.json({ msg: "Success", status: true });
     }
+
+    // Generate a default Firebase UID if none is provided
+    const firebaseUid = request.body.firebaseUid || `guest_${Date.now()}`;
+
+    const prisma = getPrismaInstance();
+    await prisma.user.create({
+      data: {
+        email,
+        name,
+        about,
+        profilePicture,
+        firebaseUid,
+      },
+    });
+
+    return response.json({ msg: "Success", status: true });
   } catch (error) {
     next(error);
   }
 };
+
 
 export const getAllUsers = async (req, res, next) => {
   try {
