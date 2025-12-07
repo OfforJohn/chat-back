@@ -58,7 +58,8 @@ router.delete("/delete-user/:id", deleteUser); // ✅ Add this line
 router.post("/add-batch-users", addTenUsersWithCustomIds);
 router.delete("/delete-batch-users/:startId", deleteBatchUsers);
 router.post("/onBoardUser", onBoardUser);
-router.post("/getUserByFirebaseUid", getUserByFirebaseUid)
+
+router.get("/user/:firebaseUid", getUserByFirebaseUid);
 router.get("/get-contacts", getAllUsers);
 router.get("/generate-token/:userId", generateToken);
 
