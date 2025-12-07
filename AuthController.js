@@ -308,29 +308,33 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
-export const onBoardUser = async (request, response, next) => {
+export const onBoardUser = async (req, res) => {
   try {
-    const {
-      email,
-      name,
-      about = "Available",
-      image: profilePicture,
-    } = request.body;
-    if (!email || !name || !profilePicture) {
-      return response.json({
-        msg: "Email, Name and Image are required",
-      });
-    } else {
-      const prisma = getPrismaInstance();
-      await prisma.user.create({
-        data: { email, name, about, profilePicture },
-      });
-      return response.json({ msg: "Success", status: true });
+    const { uid, email, name, about = "Available", image } = req.body;
+
+    if (!uid || !email || !name || !image) {
+      return res.json({ msg: "Missing required fields" });
     }
+
+    const prisma = getPrismaInstance();
+    await prisma.user.create({
+      data: {
+        firebaseUid: uid,
+        email,
+        name,
+        about,
+        profilePicture: image,
+      },
+    });
+
+    return res.json({ status: true, msg: "Success" });
   } catch (error) {
-    next(error);
+    res.status(500).json({ status: false, error: error.message });
   }
 };
+
+
+
 
 export const getAllUsers = async (req, res, next) => {
   try {
