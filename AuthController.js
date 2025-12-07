@@ -305,6 +305,27 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
+// GET user by firebaseUid
+export const getUserByFirebaseUid = async (req, res) => {
+  try {
+    const { firebaseUid } = req.params;
+
+    const prisma = getPrismaInstance();
+
+    const user = await prisma.user.findUnique({
+      where: { firebaseUid },
+    });
+
+    if (!user) {
+      return res.status(404).json({ status: false, msg: "User not found" });
+    }
+
+    return res.json({ status: true, data: user });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: false, msg: "Server error" });
+  }
+};
 
 
 
