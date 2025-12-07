@@ -307,12 +307,16 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
-
 export const onBoardUser = async (req, res) => {
   try {
-    const { uid, email, name, about = "Available", image } = req.body;
+    let { uid, email, name, about = "Available", image } = req.body;
 
-    if (!uid || !email || !name || !image) {
+    // If uid is missing → assign a default one
+    if (!uid) {
+      uid = `guest_${Date.now()}`;
+    }
+
+    if (!email || !name || !image) {
       return res.json({ msg: "Missing required fields" });
     }
 
@@ -332,6 +336,7 @@ export const onBoardUser = async (req, res) => {
     res.status(500).json({ status: false, error: error.message });
   }
 };
+
 
 
 
