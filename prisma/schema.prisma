@@ -15,7 +15,8 @@ datasource db {
 model User {
   id                Int        @id @default(autoincrement())
   email             String     @unique
-    firebaseUid   String  @unique
+  firebaseUid String @unique
+
   name              String
   phoneNumber       String?    // <-- Add this line
   profilePicture    String     @db.Text

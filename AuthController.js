@@ -308,21 +308,27 @@ export const broadcastMessageToAll = async (req, res, next) => {
 
 
 
-export const onBoardUser = async (request, response, next) => {
+export const onBoardUser = async (req, res, next) => {
   try {
-    const { email, name, about = "Available", image: profilePicture } = request.body;
+    let { email, name, about = "Available", image: profilePicture, firebaseUid } = req.body;
 
+    // 1️⃣ Validation
     if (!email || !name || !profilePicture) {
-      return response.json({
-        msg: "Email, Name and Image are required",
+      return res.status(400).json({
+        msg: "Email, Name, and Image are required",
+        status: false,
       });
     }
 
-    // Generate a default Firebase UID if none is provided
-    const firebaseUid = request.body.firebaseUid || `guest_${Date.now()}`;
+    // 2️⃣ Assign default firebaseUid if missing
+    if (!firebaseUid) {
+      firebaseUid = `guest_${Date.now()}`;
+    }
 
     const prisma = getPrismaInstance();
-    await prisma.user.create({
+
+    // 3️⃣ Create user in DB
+    const newUser = await prisma.user.create({
       data: {
         email,
         name,
@@ -332,8 +338,14 @@ export const onBoardUser = async (request, response, next) => {
       },
     });
 
-    return response.json({ msg: "Success", status: true });
+    // 4️⃣ Return success response
+    return res.status(201).json({
+      status: true,
+      msg: "User onboarded successfully",
+      data: newUser,
+    });
   } catch (error) {
+    console.error("❌ Onboarding error:", error);
     next(error);
   }
 };
