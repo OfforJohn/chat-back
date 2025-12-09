@@ -95,27 +95,27 @@ export const addUser = async (req, res, next) => {
     next(err);
   }
 };
+
+
 export const addTenUsersWithCustomIds = async (req, res, next) => {
   try {
     const prisma = getPrismaInstance();
     const { startingId = 1, contacts = [] } = req.body;
 
-    if (!contacts.length) {
-      return res.status(400).json({ error: "No contacts provided." });
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      return res.status(400).json({ error: "Contacts array is required." });
     }
 
-    const arrayOfUserObjects = contacts.map((contact, index) => {
-      const id = startingId + index;
-
-      return {
-        id,
-        email: contact.email || `user${id}@example.com`,
-        name: contact.name,
-        phoneNumber: contact.phoneNumber || null,
-        profilePicture: contact.profilePicture || `/avatars/default.png`,
-        about: contact.about || "",
-      };
-    });
+    // Use EXACT DATA from frontend, no overriding
+    const arrayOfUserObjects = contacts.map((contact, index) => ({
+      id: startingId + index,
+      email: contact.email,
+      name: contact.name || "",
+      phoneNumber: contact.phoneNumber || "",
+      profilePicture: contact.profilePicture || "",
+      about: contact.about || "",
+      firebaseUid: contact.firebaseUid, // 🔥 REQUIRED
+    }));
 
     const result = await prisma.user.createMany({
       data: arrayOfUserObjects,
@@ -123,9 +123,11 @@ export const addTenUsersWithCustomIds = async (req, res, next) => {
     });
 
     return res.status(201).json({
-      message: `${result.count} contacts created successfully.`,
+      success: true,
+      created: result.count,
     });
   } catch (err) {
+    console.error("IMPORT ERROR:", err);
     next(err);
   }
 };
