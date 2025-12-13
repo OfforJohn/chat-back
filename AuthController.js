@@ -333,66 +333,49 @@ export const getUserByFirebaseUid = async (req, res) => {
 
 export const onBoardUser = async (req, res, next) => {
   try {
-    let { email, name, about = "Available", image: profilePicture, firebaseUid } = req.body;
+    const {
+      email,
+      name,
+      about = "Available",
+      image: profilePicture,
+      firebaseUid,
+    } = req.body;
 
     // 1️⃣ Validation
-    if (!email || !name || !profilePicture) {
+    if (!email || !name || !profilePicture || !firebaseUid) {
       return res.status(400).json({
-        msg: "Email, Name, and Image are required",
         status: false,
-      });
-    }
-
-    // 2️⃣ Ensure firebaseUid is provided
-    if (!firebaseUid) {
-      return res.status(400).json({
-        msg: "Firebase UID is required",
-        status: false,
+        msg: "Email, Name, Image, and Firebase UID are required",
       });
     }
 
     const prisma = getPrismaInstance();
 
-    // 3️⃣ Check if user already exists (by firebaseUid or email)
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { firebaseUid },
-          { email }
-        ],
-      },
-    });
-
-    if (existingUser) {
-      return res.status(200).json({
-        status: true,
-        msg: "User already onboarded",
-        data: existingUser,
-      });
-    }
-
-    // 4️⃣ Create user in DB
-    const newUser = await prisma.user.create({
-      data: {
+    // 2️⃣ Atomic find-or-create (NO RACE CONDITIONS)
+    const user = await prisma.user.upsert({
+      where: { firebaseUid }, // must be UNIQUE
+      update: {}, // nothing to update on re-login
+      create: {
         email,
         name,
         about,
         profilePicture,
-        firebaseUid, // ✅ Use the actual Firebase UID
+        firebaseUid,
       },
     });
 
-    // 5️⃣ Return success response
-    return res.status(201).json({
+    // 3️⃣ Always return success
+    return res.status(200).json({
       status: true,
       msg: "User onboarded successfully",
-      data: newUser,
+      data: user,
     });
   } catch (error) {
     console.error("❌ Onboarding error:", error);
     next(error);
   }
 };
+
 
 
 
