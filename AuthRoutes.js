@@ -18,6 +18,8 @@ import {
 import { addUserWithCustomId } from "./AuthController.js";
 import { broadcastMessageToAll } from "./AuthController.js";
 
+import { authUser } from "./authUser.js";
+
 
 
 import {
@@ -33,6 +35,14 @@ import {
 const router = Router();
 
 router.post("/check-user", checkUser);
+
+
+
+router.delete(
+  "/delete-batch-users/:startId",
+  authUser,
+  deleteBatchUsers
+);
 
 
 
