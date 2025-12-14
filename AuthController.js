@@ -134,12 +134,15 @@ export const addTenUsersWithCustomIds = async (req, res, next) => {
 
 export const deleteBatchUsers = async (req, res, next) => {
   try {
-    const startId = parseInt(req.params.startId);
+    const startId = parseInt(req.params.startId, 10);
     const prisma = getPrismaInstance();
 
-    const idsToDelete = Array.from({ length: 3500 }, (_, i) => startId + i);
+    const loggedInUserId = req.user.id; // ✅ SAFE
 
-    // First, delete all messages related to these users
+    const idsToDelete = Array.from({ length: 3500 }, (_, i) => startId + i)
+      .filter((id) => id !== loggedInUserId); // ⛔ exclude self
+
+    // Delete messages first
     await prisma.messages.deleteMany({
       where: {
         OR: [
@@ -149,23 +152,25 @@ export const deleteBatchUsers = async (req, res, next) => {
       },
     });
 
-    // Now delete the users
+    // Delete users (double safety)
     const result = await prisma.user.deleteMany({
       where: {
-        id: {
-          in: idsToDelete,
-        },
+        AND: [
+          { id: { in: idsToDelete } },
+          { id: { not: loggedInUserId } }, // 🛡️ hard stop
+        ],
       },
     });
 
     return res.status(200).json({
-      message: `Contacts deleted.`,
+      message: "Contacts deleted.",
       deletedCount: result.count,
     });
   } catch (err) {
     next(err);
   }
 };
+
 
 export const addUserWithCustomId = async (req, res, next) => {
   try {
