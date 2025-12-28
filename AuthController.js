@@ -1,6 +1,5 @@
 import getPrismaInstance from "./PrismaClient.js";
-import { generateToken04 } from "./TokenGenerator.js";
-import { generateReplies } from "./generateReplies.js";
+import { firebaseAuth } from "./firebase.js";
 
 
 
@@ -387,18 +386,44 @@ export const onBoardUser = async (req, res, next) => {
 export const getAllUsers = async (req, res, next) => {
   try {
     const prisma = getPrismaInstance();
-    const users = await prisma.user.findMany({
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        profilePicture: true,
-        about: true,
-      },
+
+    // 1️⃣ Fetch users from Firebase
+    const listUsersResult = await firebaseAuth.listUsers(1000); // Fetch up to 1000 users
+    const firebaseUsers = listUsersResult.users.map(user => ({
+      firebaseUid: user.uid,
+      email: user.email || "",
+      name: user.displayName || "Unknown",
+      profilePicture: user.photoURL || "/default_avatar.png",
+      about: "Available",
+    }));
+
+    // 2️⃣ Fetch existing users from Prisma
+    const prismaUsers = await prisma.user.findMany({
+      select: { id: true, email: true, name: true, profilePicture: true, about: true, firebaseUid: true },
     });
+
+    // 3️⃣ Find Firebase users that are missing in Prisma
+    const prismaFirebaseUids = prismaUsers.map(u => u.firebaseUid);
+    const missingUsers = firebaseUsers.filter(fUser => !prismaFirebaseUids.includes(fUser.firebaseUid));
+
+    // 4️⃣ Insert missing users into Prisma
+    if (missingUsers.length > 0) {
+      await prisma.user.createMany({
+        data: missingUsers,
+        skipDuplicates: true,
+      });
+      console.log(`✅ Inserted ${missingUsers.length} missing Firebase users into Prisma`);
+    }
+
+    // 5️⃣ Merge Firebase and Prisma users
+    const mergedUsers = firebaseUsers.map(fUser => {
+      const existingUser = prismaUsers.find(pUser => pUser.firebaseUid === fUser.firebaseUid);
+      return existingUser || { ...fUser, id: null };
+    });
+
+    // 6️⃣ Group users by first letter of name
     const usersGroupedByInitialLetter = {};
-    users.forEach((user) => {
+    mergedUsers.forEach(user => {
       const initialLetter = user.name.charAt(0).toUpperCase();
       if (!usersGroupedByInitialLetter[initialLetter]) {
         usersGroupedByInitialLetter[initialLetter] = [];
@@ -406,11 +431,13 @@ export const getAllUsers = async (req, res, next) => {
       usersGroupedByInitialLetter[initialLetter].push(user);
     });
 
-    return res.status(200).send({ users: usersGroupedByInitialLetter });
+    return res.status(200).json({ users: usersGroupedByInitialLetter });
   } catch (error) {
+    console.error("getAllUsers error:", error);
     next(error);
   }
 };
+
 
 export const generateToken = (req, res, next) => {
   try {
