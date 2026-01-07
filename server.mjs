@@ -158,6 +158,13 @@ app.post("/api/validate-whatsapp-profiles", async (req, res) => {
   res.status(200).json(results);
 });
 
+// HTTP endpoint to check online users
+app.get("/api/auth/online-users", (req, res) => {
+  res.json({
+    onlineUsers: Array.from(onlineUsers.keys()),
+  });
+});
+
 // ✅ 2. Image Proxy Route (Fixes CORS issues)
 app.get("/api/proxy-image", async (req, res) => {
   const { url } = req.query;
@@ -223,6 +230,8 @@ io.on("connection", (socket) => {
     });
   });
   
+
+
   
   
 
@@ -235,6 +244,19 @@ io.on("connection", (socket) => {
     });
   });
   
+
+  socket.on("disconnect", () => {
+  for (const [userId, socketId] of onlineUsers.entries()) {
+    if (socketId === socket.id) {
+      onlineUsers.delete(userId);
+      socket.broadcast.emit("online-users", {
+        onlineUsers: Array.from(onlineUsers.keys()),
+      });
+      break;
+    }
+  }
+});
+
 
   socket.on("outgoing-voice-call", (data) => {
     const sendUserSocket = onlineUsers.get(data.to);

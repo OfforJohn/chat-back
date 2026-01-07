@@ -12,7 +12,8 @@ import {
   deleteBatchUsers,         // ✅ Only if this function is also exported
   onBoardUser,
   getUserByFirebaseUid,
-  
+  authMiddleware,
+  getAuthenticatedUserId,
   deleteUser,
 } from "./AuthController.js";
 import { addUserWithCustomId } from "./AuthController.js";
@@ -71,7 +72,11 @@ router.post("/onBoardUser", onBoardUser);
 
 router.get("/user/:firebaseUid", getUserByFirebaseUid);
 router.get("/get-contacts", getAllUsers);
+
 router.get("/generate-token/:userId", generateToken);
+
+router.get("/me", authMiddleware, getAuthenticatedUserId);
+
 
 export default router;
 

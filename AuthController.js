@@ -2,6 +2,48 @@ import getPrismaInstance from "./PrismaClient.js";
 import { firebaseAuth } from "./firebase.js";
 
 
+export const authMiddleware = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      return res.status(401).json({ msg: "No token provided" });
+    }
+
+    // Verify Firebase token
+    const decoded = await firebaseAuth.verifyIdToken(token);
+
+    const prisma = getPrismaInstance();
+
+    // Look up the user in your database
+    const user = await prisma.user.findUnique({
+      where: { firebaseUid: decoded.uid },
+    });
+
+    if (!user) {
+      return res.status(404).json({ msg: "User not found in database" });
+    }
+
+    // Attach to request
+    req.user = user;
+
+    next();
+  } catch (err) {
+    return res.status(401).json({ msg: "Invalid or expired token" });
+  }
+};
+
+export const getAuthenticatedUserId = (req, res) => {
+  return res.status(200).json({
+    status: true,
+    id: req.user.id,
+    firebaseUid: req.user.firebaseUid,
+    email: req.user.email,
+  });
+};
+
+
+
 
 export const checkUser = async (request, response, next) => {
   try {
