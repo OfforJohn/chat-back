@@ -44,6 +44,42 @@ export const getAuthenticatedUserId = (req, res) => {
 
 
 
+export const createMatch = async (req, res) => {
+  try {
+    const prisma = getPrismaInstance();
+
+    const senderId = req.user.id;
+    const { receiverId, gameMode, subjects } = req.body;
+
+    if (!receiverId || !gameMode) {
+      return res.status(400).json({ success: false, msg: "Missing fields" });
+    }
+
+    const match = await prisma.pendingMatch.create({
+      data: {
+        senderId,
+        receiverId,
+        gameMode,
+        subjects,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      },
+    });
+
+    // 🔔 Notify if online
+    const socketId = global.onlineUsers?.get(receiverId);
+    if (socketId) {
+      global.io.to(socketId).emit("match-request", match);
+    }
+
+    return res.json({ success: true, match });
+  } catch (err) {
+    console.error("createMatch error:", err);
+    return res.status(500).json({ success: false });
+  }
+};
+
+
+
 
 export const checkUser = async (request, response, next) => {
   try {

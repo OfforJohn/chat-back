@@ -2,42 +2,41 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import { v4 as uuidv4 } from "uuid";
 import mysql from "mysql2";
+import { PrismaClient } from "@prisma/client";
 import axios from "axios";
 import { Server } from "socket.io";
 
+import matchRoutes from "./matchRoutes.js";
 import AuthRoutes from "./AuthRoutes.js";
 import MessageRoutes from "./MessageRoutes.js";
 
 dotenv.config();
 const app = express();
 
-// ───── Middleware ─────────────────────────────────────────────────────────────
+/* ───────────────── Middleware ───────────────── */
 app.use(cors({ origin: "*" }));
-
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// serve uploaded recordings and images
 app.use("/uploads/recordings", express.static("uploads/recordings"));
-app.use("/uploads/images",    express.static("uploads/images"));
+app.use("/uploads/images", express.static("uploads/images"));
 
-// ───── API Routes ─────────────────────────────────────────────────────────────
-app.use("/api/auth",     AuthRoutes);
+/* ───────────────── API Routes ───────────────── */
+app.use("/api/auth", AuthRoutes);
 app.use("/api/messages", MessageRoutes);
+app.use("/api/match", matchRoutes);
+
+/* ───────────────── DB Setup ───────────────── */
+const prisma = new PrismaClient();
 
 
-
-// ───── MySQL Connection ───────────────────────────────────────────────────────
 const db = mysql.createConnection({
-  host:     process.env.DB_HOST,
-  port:     process.env.DB_PORT,
-  user:     process.env.DB_USER,
-   password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  
- 
   ssl: {
     ca: `-----BEGIN CERTIFICATE-----
 MIIEQTCCAqmgAwIBAgIUdOBuOfcuyU5AJP5JwiSW4e+gdocwDQYJKoZIhvcNAQEM
@@ -63,263 +62,216 @@ MENB61vsc8zNqNXEZxxcpX8VfkiPYU9ZAxWrhfcihkpbyCj75zKcFmVgHtI7b2wU
 QEjbu0Vwi4XBUs2YQywHXLdluiHtitNMjoqnoQJXQnSpUPtX6IcYTBG2PIw7haAA
 WGjgha0WB92BuYI3zYZk6sFNEYG25e1QlqrAiTFDs/w+MuxOh5+EWEIZKW11MU1J
 mdbUG/brd0pa05k498y4wXkzmr2AvldznE7MZEe+Ll0Kw5K16g==
------END CERTIFICATE-----
-`,
-    rejectUnauthorized: true
-  }
-});db.connect(err => {
+-----END CERTIFICATE-----`,
+    rejectUnauthorized: true,
+  },
+});
+
+db.connect((err) => {
   if (err) {
-    console.error("Error connecting to MySQL:", err);
+    console.error("❌ MySQL error:", err);
     process.exit(1);
   }
-  console.log("✅ Connected to MySQL");
+  console.log("✅ MySQL connected");
 });
-
-// make db available in your routes via req.app.locals
 app.locals.db = db;
 
-// ───── New Route to Handle WhatsApp Number Validation ─────────────────────────────
-// ───── New Route: WhatsApp Validation + Profile Data ──────────────────────────
-// ✅ 1. WhatsApp Profile Validation Route
-app.post("/api/validate-whatsapp-profiles", async (req, res) => {
-  const { phone_numbers } = req.body;
-
-  if (!phone_numbers || !Array.isArray(phone_numbers)) {
-    return res
-      .status(400)
-      .json({ error: "Please provide an array of phone numbers." });
-  }
-
-  const results = [];
-
-  for (const num of phone_numbers) {
-    try {
-      const profileRes = await axios.get(
-        `https://whatsapp-profile-data.p.rapidapi.com/mobile?mobile=${encodeURIComponent(num)}`,
-        {
-          headers: {
-            "x-rapidapi-key": process.env.RAPIDAPI_PROFILE_KEY,
-            "x-rapidapi-host": "whatsapp-profile-data.p.rapidapi.com",
-          },
-        }
-      );
-
-      const profile = profileRes.data || {};
-      let status = "valid";
-
-      // mark invalid if API says so
-      if (
-        profile.code === 400 &&
-        typeof profile.message === "string" &&
-        profile.message.toLowerCase() === "invalid phone number"
-      ) {
-        status = "invalid";
-      }
-
-      results.push({
-        phone_number: num,
-        is_valid: true,
-        avatar:
-          profile.avatar ||
-          profile.profile_pic ||
-          profile.profile?.profile_pic ||
-          profile.profilePic ||
-          profile.profilePicUrl ||
-          profile.data?.head_image ||
-          null,
-        profileRaw: profile,
-        status,
-      });
-    } catch (err) {
-      const errorData = err.response?.data || {};
-      const errorCode = err.response?.status;
-      let status = "unknown";
-
-      if (
-        errorCode === 400 &&
-        errorData.code === 400 &&
-        typeof errorData.message === "string" &&
-        errorData.message.toLowerCase() === "invalid phone number"
-      ) {
-        status = "invalid";
-      }
-
-      results.push({
-        phone_number: num,
-        is_valid: false,
-        avatar: null,
-        profileRaw: errorData,
-        error: errorData,
-        status,
-      });
-    }
-  }
-
-  res.status(200).json(results);
-});
-
-// HTTP endpoint to check online users
-app.get("/api/auth/online-users", (req, res) => {
-  res.json({
-    onlineUsers: Array.from(onlineUsers.keys()),
-  });
-});
-
-// ✅ 2. Image Proxy Route (Fixes CORS issues)
+/* ───────────────── Proxy Image ───────────────── */
 app.get("/api/proxy-image", async (req, res) => {
   const { url } = req.query;
-
-  if (!url) {
-    return res.status(400).json({ error: "Image URL is required" });
-  }
+  if (!url) return res.status(400).json({ error: "Image URL required" });
 
   try {
-    // Fetch image as binary
     const response = await axios.get(url, { responseType: "arraybuffer" });
-
-    // Set headers so the browser accepts it
     res.setHeader("Content-Type", response.headers["content-type"]);
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.send(Buffer.from(response.data, "binary"));
   } catch (err) {
-    console.error("Proxy failed:", err.message);
-    res.status(500).json({ error: "Failed to fetch image" });
+    res.status(500).json({ error: "Proxy failed" });
   }
 });
 
+/* ───────────────── 404 ───────────────── */
+app.use((req, res) => res.status(404).send("404 Not Found"));
 
-
-
-
-
-
-// ───── 404 handler ────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).send("404 Not Found");
-});
-
-
-
-// ───── Start HTTP & Socket.IO Servers ────────────────────────────────────────
+/* ───────────────── Server ───────────────── */
 const PORT = process.env.PORT || 3005;
-const server = app.listen(PORT, () => {
-  console.log(`server started on port ${PORT}`);
-});
+const server = app.listen(PORT, () =>
+  console.log(`🚀 Server running on ${PORT}`)
+);
 
+/* ───────────────── Socket.IO ───────────────── */
 const io = new Server(server, {
-  cors: {
-    origin: "*", // Adjust this in production
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] },
 });
-
-
-// Make io available in your routes:
 app.locals.io = io;
 
+/* ───────────────── Online Users ───────────────── */
+const onlineUsers = new Map();
 
-// track online users
+/* ───────────────── Live Matches ───────────────── */
+const liveMatches = new Map();
+/*
+matchId => {
+  players: [id1, id2],
+  progress: { [id]: number },
+  scores: { [id]: number },
+  currentQuestion: number,
+  startedAt: number
+}
+*/
 
-global.onlineUsers = new Map();
 io.on("connection", (socket) => {
-  global.chatSocket = socket;
-  socket.on("add-user", (userId) => {
+  console.log("🔌 Socket connected:", socket.id);
+
+  /* ---------- USER ONLINE ---------- */
+  socket.on("add-user", async (userId) => {
     onlineUsers.set(userId, socket.id);
-    socket.broadcast.emit("online-users", {
-      onlineUsers: Array.from(onlineUsers.keys()),
+    io.emit("online-users", { onlineUsers: [...onlineUsers.keys()] });
+
+    const pendingMatches = await prisma.pendingMatch.findMany({
+      where: {
+        receiverId: userId,
+        status: "pending",
+        expiresAt: { gt: new Date() },
+      },
+      include: { sender: true },
     });
+
+    if (pendingMatches.length > 0) {
+      socket.emit("pending-matches", pendingMatches);
+    }
   });
-  
 
-
-  
-  
-
-
-
-  socket.on("signout", (id) => {
-    onlineUsers.delete(id);
-    socket.broadcast.emit("online-users", {
-      onlineUsers: Array.from(onlineUsers.keys()),
-    });
+  socket.on("signout", (userId) => {
+    onlineUsers.delete(userId);
+    io.emit("online-users", { onlineUsers: [...onlineUsers.keys()] });
   });
-  
 
   socket.on("disconnect", () => {
-  for (const [userId, socketId] of onlineUsers.entries()) {
-    if (socketId === socket.id) {
-      onlineUsers.delete(userId);
-      socket.broadcast.emit("online-users", {
-        onlineUsers: Array.from(onlineUsers.keys()),
-      });
-      break;
-    }
-  }
-});
-
-
-  socket.on("outgoing-voice-call", (data) => {
-    const sendUserSocket = onlineUsers.get(data.to);
-    if (sendUserSocket) {
-      socket.to(sendUserSocket).emit("incoming-voice-call", {
-        from: data.from,
-        roomId: data.roomId,
-        callType: data.callType,
-      });
-    } else {
-      const senderSocket = onlineUsers.get(data.from);
-      socket.to(senderSocket).emit("voice-call-offline");
+    for (const [id, sid] of onlineUsers.entries()) {
+      if (sid === socket.id) {
+        onlineUsers.delete(id);
+        io.emit("online-users", { onlineUsers: [...onlineUsers.keys()] });
+        break;
+      }
     }
   });
 
-  socket.on("reject-voice-call", (data) => {
-    const sendUserSocket = onlineUsers.get(data.from);
-    if (sendUserSocket) {
-      socket.to(sendUserSocket).emit("voice-call-rejected");
+  /* ---------- READY ---------- */
+  socket.on("ready-for-battle", ({ from, to }) => {
+    const toSocket = onlineUsers.get(to);
+    if (toSocket) {
+      io.to(toSocket).emit("opponent-ready", { from });
     }
+  });
+
+  /* ---------- CONFIRM BATTLE ---------- */
+  socket.on("confirm-battle", ({ from, to, gameMode, subjects }) => {
+    const matchId = `match_${from}_${to}_${Date.now()}`;
+
+    liveMatches.set(matchId, {
+      players: [from, to],
+      progress: { [from]: 0, [to]: 0 },
+      scores: { [from]: 0, [to]: 0 },
+      currentQuestion: 0,
+      startedAt: Date.now(),
+    });
+
+    socket.join(matchId);
+    const toSocketId = onlineUsers.get(to);
+    if (toSocketId) {
+      io.sockets.sockets.get(toSocketId)?.join(matchId);
+    }
+
+    io.to(matchId).emit("battle-confirmed", {
+      matchId,
+      players: [from, to],
+      gameMode,
+      subjects,
+    });
+
+    console.log("⚔️ Match created:", matchId);
+  });
+
+  /* ---------- ANSWER ---------- */
+  socket.on("submit-answer", ({ matchId, userId, correct }) => {
+    const match = liveMatches.get(matchId);
+    if (!match) return;
+
+    match.progress[userId]++;
+    if (correct) match.scores[userId] += 100;
+
+    io.to(matchId).emit("match-progress", {
+      progress: match.progress,
+      scores: match.scores,
+      currentQuestion: match.currentQuestion,
+    });
+  });
+
+  /* ---------- NEXT QUESTION ---------- */
+  socket.on("request-next-question", ({ matchId }) => {
+    const match = liveMatches.get(matchId);
+    if (!match) return;
+
+    const allAnswered = match.players.every(
+      (p) => match.progress[p] > match.currentQuestion
+    );
+
+    if (allAnswered) {
+      match.currentQuestion++;
+      io.to(matchId).emit("next-question", {
+        currentQuestion: match.currentQuestion,
+      });
+    }
+  });
+
+  /* ---------- END MATCH ---------- */
+  socket.on("end-match", ({ matchId }) => {
+    const match = liveMatches.get(matchId);
+    if (!match) return;
+
+    io.to(matchId).emit("match-ended", {
+      scores: match.scores,
+    });
+
+    liveMatches.delete(matchId);
+    console.log("🏁 Match ended:", matchId);
+  });
+
+  /* ---------- CALLS ---------- */
+  socket.on("outgoing-voice-call", (data) => {
+    const toSocket = onlineUsers.get(data.to);
+    if (toSocket) socket.to(toSocket).emit("incoming-voice-call", data);
   });
 
   socket.on("outgoing-video-call", (data) => {
-    const sendUserSocket = onlineUsers.get(data.to);
-    if (sendUserSocket) {
-      socket.to(sendUserSocket).emit("incoming-video-call", {
-        from: data.from,
-        roomId: data.roomId,
-        callType: data.callType,
-      });
-    } else {
-      const senderSocket = onlineUsers.get(data.from);
-      socket.to(senderSocket).emit("video-call-offline");
-    }
+    const toSocket = onlineUsers.get(data.to);
+    if (toSocket) socket.to(toSocket).emit("incoming-video-call", data);
   });
 
   socket.on("accept-incoming-call", ({ id }) => {
-    const sendUserSocket = onlineUsers.get(id);
-    socket.to(sendUserSocket).emit("accept-call");
+    const toSocket = onlineUsers.get(id);
+    if (toSocket) socket.to(toSocket).emit("accept-call");
   });
 
-  socket.on("reject-video-call", (data) => {
-    const sendUserSocket = onlineUsers.get(data.from);
-    if (sendUserSocket) {
-      socket.to(sendUserSocket).emit("video-call-rejected");
-    }
+  socket.on("reject-video-call", ({ from }) => {
+    const fromSocket = onlineUsers.get(from);
+    if (fromSocket) socket.to(fromSocket).emit("video-call-rejected");
   });
 
+  /* ---------- MESSAGES ---------- */
   socket.on("send-msg", (data) => {
-    const sendUserSocket = onlineUsers.get(data.to);
-    if (sendUserSocket) {
-      socket
-        .to(sendUserSocket)
-        .emit("msg-recieve", { from: data.from, message: data.message });
+    const toSocket = onlineUsers.get(data.to);
+    if (toSocket) {
+      socket.to(toSocket).emit("msg-recieve", {
+        from: data.from,
+        message: data.message,
+      });
     }
   });
-  console.log(socket.listenerCount("add-user")); // will show number of add-user listeners
-
 
   socket.on("mark-read", ({ id, recieverId }) => {
-    const sendUserSocket = onlineUsers.get(id);
-    if (sendUserSocket) {
-      socket.to(sendUserSocket).emit("mark-read-recieve", { id, recieverId });
-    }
+    const toSocket = onlineUsers.get(id);
+    if (toSocket) socket.to(toSocket).emit("mark-read-recieve", { id, recieverId });
   });
 });

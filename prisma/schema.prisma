@@ -15,14 +15,36 @@ datasource db {
 model User {
   id                Int        @id @default(autoincrement())
   email             String     @unique
-  firebaseUid String @unique
-
+  firebaseUid       String     @unique
   name              String
-  phoneNumber       String?    // <-- Add this line
+  phoneNumber       String?
   profilePicture    String     @db.Text
   about             String     @default("")
+
   sentMessages      Messages[] @relation("sentMessages")
   recievedMessages  Messages[] @relation("recievedMessages")
+
+  // ✅ ADD THESE
+  pendingMatchesSent     PendingMatch[] @relation("MatchSender")
+  pendingMatchesReceived PendingMatch[] @relation("MatchReceiver")
+}
+
+
+model PendingMatch {
+  id         Int      @id @default(autoincrement())
+
+  sender     User     @relation("MatchSender", fields: [senderId], references: [id])
+  senderId   Int
+
+  receiver   User     @relation("MatchReceiver", fields: [receiverId], references: [id])
+  receiverId Int
+
+  status     String   @default("pending") // pending | accepted | rejected | expired
+  gameMode   String
+  subjects   Json
+
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
 }
 
 
